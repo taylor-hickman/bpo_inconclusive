@@ -211,18 +211,3 @@ go run cmd/dev/test_validation/main.go
 │   └── lib/             # Utilities and stores
 └── bpo_inconclusive_provider_data_sample.csv  # Sample data
 ```
-
-## 🤝 Contributing
-
-1. Follow Go conventions for backend code
-2. Use TypeScript and follow React best practices for frontend
-3. Maintain test coverage for new features
-4. Update documentation for API changes
-
-## 📝 License
-
-This project is proprietary software for BPO provider validation operations.
-
----
-
-For questions or support, please refer to the technical documentation in the codebase or contact the development team.
