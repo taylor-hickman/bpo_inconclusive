@@ -1,0 +1,44 @@
+# Binaries
+api
+loader
+loader_v2
+migrate
+debug
+test_*
+check
+reset
+clear_sessions
+list_users
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go dependencies
+vendor/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+*.out
+coverage.txt
+coverage.html

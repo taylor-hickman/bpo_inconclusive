@@ -1,0 +1,85 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# CSV data files
+*.csv
+# Or if you want to be more specific about the location:
+# /bpo_inconclusive_provider_data_sample.csv
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# Claude AI directory
+.claude/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.cache
+tmp/
+temp/
+
+# System files
+*.pid
+*.seed
+*.pid.lock
+
+# Test coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+out/
+*.out
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Misc
+.cache/
+.history/
