@@ -87,17 +87,31 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
       })
       set({ isLoading: false })
     } catch (error: any) {
-      set({ 
-        error: error.message || 'Failed to update validation', 
-        isLoading: false 
-      })
-      throw error
+      let errorMessage = error.message || 'Failed to update validation'
+      
+      // Handle session-related errors
+      if (errorMessage.includes('no rows in result set') || errorMessage.includes('session not found')) {
+        errorMessage = 'Session expired or invalid. Please fetch a new provider.'
+        set({ 
+          currentData: null,
+          error: errorMessage, 
+          isLoading: false 
+        })
+      } else {
+        set({ 
+          error: errorMessage, 
+          isLoading: false 
+        })
+      }
+      throw new Error(errorMessage)
     }
   },
 
   recordCallAttempt: async (attemptNumber: number) => {
     const { currentData } = get()
-    if (!currentData?.validation_session) return
+    if (!currentData?.validation_session) {
+      throw new Error('No validation session available')
+    }
     
     set({ isLoading: true, error: null })
     try {
@@ -105,33 +119,92 @@ export const useProviderStore = create<ProviderStoreState>((set, get) => ({
         attempt_number: attemptNumber
       })
       
-      // Refresh current provider to get updated call attempt times
-      await get().fetchNextProvider()
-    } catch (error: any) {
+      // Immediately update the local state with the current timestamp
+      const now = new Date().toISOString()
+      const updatedSession = { ...currentData.validation_session }
+      
+      if (attemptNumber === 1) {
+        updatedSession.call_attempt_1 = now
+      } else if (attemptNumber === 2) {
+        updatedSession.call_attempt_2 = now
+      }
+      
       set({ 
-        error: error.message || 'Failed to record call attempt', 
+        currentData: {
+          ...currentData,
+          validation_session: updatedSession
+        },
         isLoading: false 
       })
-      throw error
+      
+      // Also refresh from server to ensure consistency
+      await get().fetchNextProvider()
+    } catch (error: any) {
+      let errorMessage = error.message || 'Failed to record call attempt'
+      
+      // Handle specific error cases
+      if (errorMessage.includes('no rows in result set') || errorMessage.includes('session not found')) {
+        errorMessage = 'Session expired or invalid. Please fetch a new provider.'
+        // Clear current data since session is invalid
+        set({ 
+          currentData: null,
+          error: errorMessage, 
+          isLoading: false 
+        })
+      } else if (errorMessage.includes('session is not in progress')) {
+        errorMessage = 'This validation session is no longer active. Please fetch a new provider.'
+        // Clear current data since session is not active
+        set({ 
+          currentData: null,
+          error: errorMessage, 
+          isLoading: false 
+        })
+      } else {
+        set({ 
+          error: errorMessage, 
+          isLoading: false 
+        })
+      }
+      throw new Error(errorMessage)
     }
   },
 
   completeValidation: async () => {
     const { currentData } = get()
-    if (!currentData?.validation_session) return
+    if (!currentData?.validation_session) {
+      throw new Error('No validation session found')
+    }
     
+    const sessionId = currentData.validation_session.id
     set({ isLoading: true, error: null })
+    
     try {
-      // First save any pending validations
-      await get().updateValidations()
+      // First save any pending validations, but don't fail completion if this fails
+      try {
+        await get().updateValidations()
+      } catch (updateError: any) {
+        console.warn('Failed to update validations before completion:', updateError)
+        // Continue with completion even if update fails
+      }
       
       // Then complete the session
-      await validationService.completeValidation(currentData.validation_session.id)
+      await validationService.completeValidation(sessionId)
+      
+      // Immediately clear current data to prevent further operations on completed session
+      set({ 
+        currentData: null,
+        addressValidations: {},
+        phoneValidations: {},
+        newAddresses: [],
+        isLoading: false,
+        error: null
+      })
       
       // Fetch next provider and refresh stats
       await get().fetchNextProvider()
       await get().fetchStats()
     } catch (error: any) {
+      // If completion fails, don't clear the session data yet
       set({ 
         error: error.message || 'Failed to complete validation', 
         isLoading: false 

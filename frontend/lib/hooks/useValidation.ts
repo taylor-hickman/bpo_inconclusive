@@ -70,7 +70,10 @@ export function useValidation({ providerData }: UseValidationProps) {
   }, [])
   
   const saveProgress = useCallback(async () => {
-    if (!providerData?.validation_session) return
+    if (!providerData?.validation_session) {
+      console.log('Save progress skipped: no active session')
+      return
+    }
     
     const updateData = {
       address_validations: Object.values(validationState.addressValidations),
@@ -78,27 +81,70 @@ export function useValidation({ providerData }: UseValidationProps) {
       new_addresses: validationState.newAddresses
     }
     
-    return updateValidationApi.execute(providerData.validation_session.id, updateData)
+    try {
+      return await updateValidationApi.execute(providerData.validation_session.id, updateData)
+    } catch (error: any) {
+      // Transform session-related errors
+      if (error.message?.includes('session not found') || 
+          error.message?.includes('already completed')) {
+        throw new Error('Session expired or invalid. Please fetch a new provider.')
+      }
+      throw error
+    }
   }, [providerData, validationState, updateValidationApi])
   
   const recordCallAttempt = useCallback(async (attemptNumber: number) => {
-    if (!providerData?.validation_session) return
+    if (!providerData?.validation_session) {
+      throw new Error('No validation session available')
+    }
     
-    return recordCallAttemptApi.execute(providerData.validation_session.id, {
-      attempt_number: attemptNumber
-    })
+    try {
+      return await recordCallAttemptApi.execute(providerData.validation_session.id, {
+        attempt_number: attemptNumber
+      })
+    } catch (error: any) {
+      // Transform backend SQL errors into user-friendly messages
+      if (error.message?.includes('no rows in result set')) {
+        throw new Error('Session expired or invalid. Please fetch a new provider.')
+      }
+      throw error
+    }
   }, [providerData, recordCallAttemptApi])
   
   const getValidationPreview = useCallback(async (): Promise<ValidationPreview | null> => {
-    if (!providerData?.validation_session) return null
-    return getValidationPreviewApi.execute(providerData.validation_session.id)
+    if (!providerData?.validation_session) {
+      console.log('Preview fetch skipped: no active session')
+      return null
+    }
+    
+    try {
+      return await getValidationPreviewApi.execute(providerData.validation_session.id)
+    } catch (error: any) {
+      // Transform session-related errors
+      if (error.message?.includes('session not found') || 
+          error.message?.includes('already completed')) {
+        console.log('Preview fetch failed: session no longer valid')
+        return null
+      }
+      throw error
+    }
   }, [providerData, getValidationPreviewApi])
 
   const completeValidation = useCallback(async () => {
-    if (!providerData?.validation_session) return
+    if (!providerData?.validation_session) {
+      throw new Error('No validation session available')
+    }
     
     // First save progress, then complete
-    await saveProgress()
+    try {
+      await saveProgress()
+    } catch (saveError) {
+      // Log but don't fail completely - let user decide
+      console.warn('Failed to save progress before completion:', saveError)
+      // Re-throw to let the UI handle this appropriately
+      throw new Error(`Failed to save progress: ${saveError instanceof Error ? saveError.message : 'Unknown error'}`)
+    }
+    
     return completeValidationApi.execute(providerData.validation_session.id)
   }, [providerData, saveProgress, completeValidationApi])
   

@@ -37,7 +37,8 @@ export default function ValidationPage() {
   const { 
     currentData: currentProvider, 
     fetchNextProvider, 
-    clearValidations 
+    clearValidations,
+    recordCallAttempt: recordCallAttemptFromStore
   } = useProviderStore()
   
   const {
@@ -72,7 +73,7 @@ export default function ValidationPage() {
     data: validationState,
     onSave: saveProgress,
     delay: 3000, // Save after 3 seconds of inactivity
-    enabled: !!currentProvider // Only auto-save when there's a provider
+    enabled: !!currentProvider?.validation_session // Only auto-save when there's an active session
   })
   
   // Fetch stats on mount
@@ -109,17 +110,35 @@ export default function ValidationPage() {
       await completeValidation()
       await fetchStats()
       clearValidations()
+      // Clear validation preview after successful completion
+      setValidationPreview(null)
     } catch (error) {
       console.error('Failed to complete validation:', error)
+      // Don't clear validations on error - let user try again
     }
   }
   
   const handleRecordCallAttempt = async (attemptNumber: number) => {
     try {
-      await recordCallAttempt(attemptNumber)
+      await recordCallAttemptFromStore(attemptNumber)
       await fetchStats()
     } catch (error) {
       console.error('Failed to record call attempt:', error)
+      // If session is invalid, refresh the page state
+      if (error instanceof Error && 
+          (error.message.includes('Session expired') || 
+           error.message.includes('no longer active'))) {
+        // Clear local state and let user fetch new provider
+        setValidationPreview(null)
+      }
+    }
+  }
+
+  const handleScrollToValidation = () => {
+    // Scroll to the validation section
+    const validationSection = document.querySelector('[data-section="validation"]')
+    if (validationSection) {
+      validationSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }
   
@@ -210,7 +229,7 @@ export default function ValidationPage() {
                   <ProviderCard provider={currentProvider.provider} />
                   
                   {/* Validation sections */}
-                  <div className="space-y-4">
+                  <div className="space-y-4" data-section="validation">
                     <h3 className="text-lg font-semibold">Address & Phone Validation</h3>
                     
                     {groupedRecords.map((group, groupIndex) => (
@@ -250,6 +269,11 @@ export default function ValidationPage() {
                   <ValidationSteps
                     session={currentProvider.validation_session || null}
                     preview={validationPreview}
+                    onRecordCallAttempt={handleRecordCallAttempt}
+                    onSaveProgress={handleSaveProgress}
+                    onCompleteValidation={handleComplete}
+                    onScrollToValidation={handleScrollToValidation}
+                    isLoading={isLoading}
                   />
 
                   {/* Call attempts */}

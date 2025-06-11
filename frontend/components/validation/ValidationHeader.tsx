@@ -34,7 +34,11 @@ export function ValidationHeader({
   const [previewError, setPreviewError] = useState<string | null>(null)
 
   const fetchPreview = async () => {
-    if (!hasProvider) return
+    if (!hasProvider) {
+      setPreview(null)
+      setPreviewError(null)
+      return
+    }
     
     setPreviewLoading(true)
     setPreviewError(null)
@@ -44,9 +48,14 @@ export function ValidationHeader({
       onPreviewUpdate?.(result)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to get validation status'
-      // If session is not found, trigger a fresh provider fetch
-      if (errorMessage.includes('session not found') || errorMessage.includes('already completed')) {
-        setPreviewError('Session expired. Please fetch a new provider.')
+      // If session is not found, silently clear preview instead of showing error
+      if (errorMessage.includes('session not found') || 
+          errorMessage.includes('already completed') ||
+          errorMessage.includes('Session expired')) {
+        setPreview(null)
+        setPreviewError(null)
+        onPreviewUpdate?.(null)
+        console.log('Preview fetch skipped: session no longer valid')
       } else {
         setPreviewError(errorMessage)
       }
@@ -62,11 +71,20 @@ export function ValidationHeader({
   const handleSaveProgress = async () => {
     try {
       await onSaveProgress()
-      await fetchPreview()
+      // Only fetch preview if we still have a provider (session might be completed)
+      if (hasProvider) {
+        await fetchPreview()
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save progress'
-      if (errorMessage.includes('session not found') || errorMessage.includes('already completed')) {
-        setPreviewError('Session expired. Please fetch a new provider.')
+      if (errorMessage.includes('session not found') || 
+          errorMessage.includes('already completed') ||
+          errorMessage.includes('Session expired')) {
+        // Clear preview state instead of showing error
+        setPreview(null)
+        setPreviewError(null)
+        onPreviewUpdate?.(null)
+        console.log('Save progress failed: session no longer valid')
       }
       // Let the parent component handle other errors
       throw err
@@ -78,7 +96,23 @@ export function ValidationHeader({
       await fetchPreview()
       return
     }
-    await onComplete()
+    
+    try {
+      await onComplete()
+      // Clear preview after successful completion
+      setPreview(null)
+      setPreviewError(null)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to complete validation'
+      if (errorMessage.includes('session not found') || errorMessage.includes('already completed')) {
+        setPreviewError('Session expired. Please fetch a new provider.')
+        setPreview(null)
+      } else {
+        // Refresh preview to get current state after error
+        await fetchPreview()
+      }
+      throw err
+    }
   }
 
   const progress = preview ? {
@@ -118,10 +152,11 @@ export function ValidationHeader({
             
             <Button 
               onClick={handleComplete}
-              disabled={isLoading || previewLoading || !preview?.can_complete}
+              disabled={isLoading || previewLoading || !preview?.can_complete || 
+                       (preview && (preview.unvalidated_addresses.length > 0 || preview.unvalidated_phones.length > 0))}
               className="bg-green-600 hover:bg-green-700 flex items-center gap-2"
             >
-              {preview?.can_complete ? (
+              {preview?.can_complete && preview.unvalidated_addresses.length === 0 && preview.unvalidated_phones.length === 0 ? (
                 <CheckCircle className="h-4 w-4" />
               ) : (
                 <Clock className="h-4 w-4" />
@@ -152,10 +187,10 @@ export function ValidationHeader({
               <div className="flex justify-between items-center">
                 <span className="font-medium">Validation Progress</span>
                 <Badge 
-                  variant={preview.can_complete ? "default" : "secondary"}
-                  className={preview.can_complete ? "bg-green-100 text-green-800" : ""}
+                  variant={preview.can_complete && preview.unvalidated_addresses.length === 0 && preview.unvalidated_phones.length === 0 ? "default" : "secondary"}
+                  className={preview.can_complete && preview.unvalidated_addresses.length === 0 && preview.unvalidated_phones.length === 0 ? "bg-green-100 text-green-800" : ""}
                 >
-                  {preview.can_complete ? "Ready to Complete" : "In Progress"}
+                  {preview.can_complete && preview.unvalidated_addresses.length === 0 && preview.unvalidated_phones.length === 0 ? "Ready to Complete" : "In Progress"}
                 </Badge>
               </div>
               
@@ -169,8 +204,15 @@ export function ValidationHeader({
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>{progress.percentage}% complete</p>
                 {preview.message && (
-                  <p className={preview.can_complete ? "text-green-600" : "text-amber-600"}>
+                  <p className={preview.can_complete && preview.unvalidated_addresses.length === 0 && preview.unvalidated_phones.length === 0 ? "text-green-600" : "text-amber-600"}>
                     {preview.message}
+                  </p>
+                )}
+                
+                {/* Enhanced completion requirement message */}
+                {preview.can_complete && (preview.unvalidated_addresses.length > 0 || preview.unvalidated_phones.length > 0) && (
+                  <p className="text-amber-600">
+                    Cannot complete: Both addresses and phones must be validated
                   </p>
                 )}
               </div>

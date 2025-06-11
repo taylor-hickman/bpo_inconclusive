@@ -28,7 +28,12 @@ export function CallAttemptsSection({
   
   const handleRecordAttempt = async () => {
     if (canMakeCallAttempt) {
-      await onRecordAttempt(nextAttemptNumber)
+      try {
+        await onRecordAttempt(nextAttemptNumber)
+      } catch (error) {
+        // Error is handled by parent component, this ensures UI stays responsive
+        console.error('Call attempt recording failed:', error)
+      }
     }
   }
   
