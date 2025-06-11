@@ -79,6 +79,11 @@ env/
 *.dll
 *.so
 *.dylib
+main
+api
+auth-app
+backend/api
+backend/main
 
 # Misc
 .cache/

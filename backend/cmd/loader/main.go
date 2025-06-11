@@ -17,8 +17,13 @@ func main() {
 
 	csvPath := os.Args[1]
 
-	// Initialize database
-	if err := database.InitDB("./auth.db"); err != nil {
+	// Initialize database using environment variable or default
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./auth.db"
+	}
+	
+	if err := database.InitDB(dbPath); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
 
