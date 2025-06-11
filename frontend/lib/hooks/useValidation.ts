@@ -6,7 +6,9 @@ import type {
   PhoneValidation, 
   NewAddress,
   ValidationState,
-  ProviderValidationData
+  ProviderValidationData,
+  ValidationPreview,
+  ApiError
 } from '@/lib/types'
 
 interface UseValidationProps {
@@ -23,23 +25,24 @@ export function useValidation({ providerData }: UseValidationProps) {
   const updateValidationApi = useApi(validationService.updateValidation)
   const recordCallAttemptApi = useApi(validationService.recordCallAttempt)
   const completeValidationApi = useApi(validationService.completeValidation)
+  const getValidationPreviewApi = useApi(validationService.getValidationPreview)
   
-  const setAddressValidation = useCallback((addressId: number, validation: AddressValidation) => {
+  const setAddressValidation = useCallback((validation: AddressValidation) => {
     setValidationState(prev => ({
       ...prev,
       addressValidations: {
         ...prev.addressValidations,
-        [addressId]: validation
+        [validation.address_id]: validation
       }
     }))
   }, [])
   
-  const setPhoneValidation = useCallback((phoneId: number, validation: PhoneValidation) => {
+  const setPhoneValidation = useCallback((validation: PhoneValidation) => {
     setValidationState(prev => ({
       ...prev,
       phoneValidations: {
         ...prev.phoneValidations,
-        [phoneId]: validation
+        [validation.phone_id]: validation
       }
     }))
   }, [])
@@ -86,6 +89,11 @@ export function useValidation({ providerData }: UseValidationProps) {
     })
   }, [providerData, recordCallAttemptApi])
   
+  const getValidationPreview = useCallback(async (): Promise<ValidationPreview | null> => {
+    if (!providerData?.validation_session) return null
+    return getValidationPreviewApi.execute(providerData.validation_session.id)
+  }, [providerData, getValidationPreviewApi])
+
   const completeValidation = useCallback(async () => {
     if (!providerData?.validation_session) return
     
@@ -94,35 +102,12 @@ export function useValidation({ providerData }: UseValidationProps) {
     return completeValidationApi.execute(providerData.validation_session.id)
   }, [providerData, saveProgress, completeValidationApi])
   
-  const isValidationComplete = useMemo(() => {
-    if (!providerData?.address_phone_records) return false
-    
-    // Check if all addresses and phones have been validated
-    return providerData.address_phone_records.every(record => {
-      const addressValidated = validationState.addressValidations[record.address.id]
-      const phoneValidated = record.phone.id === 0 || validationState.phoneValidations[record.phone.id]
-      return addressValidated && phoneValidated
-    })
-  }, [providerData, validationState])
   
-  const validationProgress = useMemo(() => {
-    if (!providerData?.address_phone_records) return { completed: 0, total: 0, percentage: 0 }
-    
-    const total = providerData.address_phone_records.length * 2 // address + phone
-    let completed = 0
-    
-    providerData.address_phone_records.forEach(record => {
-      if (validationState.addressValidations[record.address.id]) completed++
-      if (record.phone.id === 0 || validationState.phoneValidations[record.phone.id]) completed++
-    })
-    
-    return {
-      completed,
-      total,
-      percentage: total > 0 ? Math.round((completed / total) * 100) : 0
-    }
-  }, [providerData, validationState])
-  
+  const getErrorMessage = (error: string | ApiError | null): string | null => {
+    if (!error) return null
+    return typeof error === 'string' ? error : error.message
+  }
+
   return {
     validationState,
     setAddressValidation,
@@ -132,10 +117,9 @@ export function useValidation({ providerData }: UseValidationProps) {
     clearValidations,
     saveProgress,
     recordCallAttempt,
+    getValidationPreview,
     completeValidation,
-    isValidationComplete,
-    validationProgress,
-    isLoading: updateValidationApi.loading || recordCallAttemptApi.loading || completeValidationApi.loading,
-    error: updateValidationApi.error || recordCallAttemptApi.error || completeValidationApi.error
+    isLoading: updateValidationApi.loading || recordCallAttemptApi.loading || completeValidationApi.loading || getValidationPreviewApi.loading,
+    error: getErrorMessage(updateValidationApi.error || recordCallAttemptApi.error || completeValidationApi.error || getValidationPreviewApi.error)
   }
 }

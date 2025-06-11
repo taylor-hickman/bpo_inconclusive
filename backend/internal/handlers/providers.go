@@ -36,7 +36,7 @@ func GetNextProvider(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to get provider", http.StatusInternalServerError)
 		return
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(providerData)
 }
@@ -62,10 +62,10 @@ func UpdateValidation(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Session is locked by another user", http.StatusConflict)
 			return
 		}
+		log.Printf("UpdateValidation: Failed to update validation for session %d: %v", sessionID, err)
 		http.Error(w, "Failed to update validation", http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
@@ -124,6 +124,30 @@ func CompleteValidation(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func GetValidationPreview(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value("user_id").(int)
+	vars := mux.Vars(r)
+	sessionID, err := strconv.Atoi(vars["sessionId"])
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	preview, err := providers.GetValidationPreview(sessionID, userID)
+	if err != nil {
+		if err == providers.ErrSessionLocked {
+			http.Error(w, "Session is locked by another user", http.StatusConflict)
+			return
+		}
+		log.Printf("GetValidationPreview: Failed to get preview for session %d: %v", sessionID, err)
+		http.Error(w, "Failed to get validation preview", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(preview)
 }
 
 func GetProviderStats(w http.ResponseWriter, r *http.Request) {

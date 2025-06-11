@@ -21,9 +21,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
     set({ isLoading: true, error: null })
     
     try {
-      console.log('Attempting login with credentials:', { email })
       const response = await authService.login({ email, password })
-      console.log('Login response:', response)
       
       const { token, user } = response
       
@@ -35,9 +33,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
       Cookies.set('token', token, { expires: 1 })
       
       set({ user, token, isLoading: false })
-      console.log('Login successful:', { user: user.email, tokenLength: token.length })
     } catch (error: any) {
-      console.error('Login error:', error)
       const errorMessage = error.message || 'Login failed'
       set({ 
         error: errorMessage, 
@@ -87,7 +83,7 @@ export const useAuthStore = create<AuthStoreState>((set, get) => ({
       // Token is invalid, clear it
       Cookies.remove('token')
       set({ user: null, token: null })
-      throw error
+      // Don't throw the error - just clear the auth state
     }
   },
 

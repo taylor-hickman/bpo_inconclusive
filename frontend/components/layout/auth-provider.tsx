@@ -9,7 +9,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Only check auth if we have a token
     if (token) {
-      checkAuth()
+      checkAuth().catch(() => {
+        // Silently handle auth check failures
+        // The store will clear the token if it's invalid
+      })
     }
   }, []) // Remove dependencies to only run once on mount
 

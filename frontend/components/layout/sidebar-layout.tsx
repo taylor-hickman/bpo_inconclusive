@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useAuthStore, useProviderStore } from '@/lib/stores'
+import { useAuthStore } from '@/lib/stores'
+import { useProviderStore } from '@/lib/stores'
 import { ThemeToggle } from './theme-toggle'
 import { Button } from '@/components/ui/button'
 import { 
