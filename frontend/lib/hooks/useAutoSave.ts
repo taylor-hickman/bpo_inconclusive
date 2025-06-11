@@ -23,8 +23,15 @@ export function useAutoSave({
     try {
       isSavingRef.current = true
       await onSave()
-    } catch (error) {
-      console.error('Auto-save failed:', error)
+    } catch (error: any) {
+      // Silently ignore session-related errors for auto-save
+      if (error?.message?.includes('session not found') || 
+          error?.message?.includes('already completed') ||
+          error?.message?.includes('Session expired')) {
+        console.log('Auto-save skipped: session no longer valid')
+      } else {
+        console.error('Auto-save failed:', error)
+      }
     } finally {
       isSavingRef.current = false
     }
