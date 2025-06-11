@@ -1,128 +1,141 @@
-import axios, { AxiosInstance, AxiosError } from 'axios'
 import Cookies from 'js-cookie'
-import type { ApiConfig, ApiError } from '@/lib/types'
+import type { ApiConfig } from '@/lib/types'
+
+interface FetchError extends Error {
+  status?: number
+  code?: string
+  originalError?: any
+}
 
 class ApiClient {
-  private client: AxiosInstance
+  private baseURL: string
+  private timeout: number
+  private headers: Record<string, string>
   
   constructor(config: ApiConfig) {
-    this.client = axios.create({
-      baseURL: config.baseURL,
-      timeout: config.timeout || 10000,
-      headers: {
-        'Content-Type': 'application/json',
-        ...config.headers
-      }
-    })
-    
-    this.setupInterceptors()
+    this.baseURL = config.baseURL
+    this.timeout = config.timeout || 10000
+    this.headers = {
+      'Content-Type': 'application/json',
+      ...config.headers
+    }
   }
   
-  private setupInterceptors() {
-    // Request interceptor to add auth token
-    this.client.interceptors.request.use((config) => {
-      const token = Cookies.get('token')
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`
-      }
-      return config
-    })
+  private async request<T>(
+    url: string, 
+    options: RequestInit = {}
+  ): Promise<T> {
+    const token = Cookies.get('token')
+    const headers: Record<string, string> = {
+      ...this.headers,
+      ...options.headers as Record<string, string>
+    }
     
-    // Response interceptor for error handling
-    this.client.interceptors.response.use(
-      (response) => response,
-      (error: AxiosError) => {
-        const errorMessage = this.extractErrorMessage(error)
-        const apiError = new Error(errorMessage)
-        // Add additional properties to the error
-        ;(apiError as any).status = error.response?.status
-        ;(apiError as any).code = error.code
-        ;(apiError as any).originalError = error
-        return Promise.reject(apiError)
+    if (token) {
+      headers.Authorization = `Bearer ${token}`
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout)
+
+    try {
+      const response = await fetch(`${this.baseURL}${url}`, {
+        ...options,
+        headers,
+        signal: controller.signal
+      })
+
+      clearTimeout(timeoutId)
+
+      if (!response.ok) {
+        const errorMessage = await this.extractErrorMessage(response)
+        const error: FetchError = new Error(errorMessage)
+        error.status = response.status
+        error.code = response.status.toString()
+        throw error
       }
-    )
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      clearTimeout(timeoutId)
+      if (error instanceof Error && error.name === 'AbortError') {
+        const timeoutError: FetchError = new Error('Request timed out - please try again')
+        timeoutError.code = 'TIMEOUT'
+        throw timeoutError
+      }
+      throw error
+    }
   }
   
-  private extractErrorMessage(error: AxiosError): string {
-    // Log the full error for debugging
-    console.error('API Error:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      message: error.message,
-      code: error.code,
-      url: error.config?.url
-    })
-    
-    // Handle response errors (4xx, 5xx)
-    if (error.response) {
-      const { status, data } = error.response
+  private async extractErrorMessage(response: Response): Promise<string> {
+    try {
+      const text = await response.text()
       
-      // Handle string responses (like plain text from Go backend)
-      if (typeof data === 'string' && data.trim()) {
-        return data.trim()
-      }
-      
-      // Handle object responses
-      if (data && typeof data === 'object') {
+      // Try to parse as JSON first
+      try {
+        const data = JSON.parse(text)
         if (data.message) return data.message
         if (data.error) return data.error
         if (data.detail) return data.detail
+      } catch {
+        // If not JSON, use the text directly
+        if (text.trim()) return text.trim()
       }
-      
-      // Default status-based messages
-      switch (status) {
-        case 400:
-          return 'Bad request - please check your input'
-        case 401:
-          return 'Authentication required - please login'
-        case 403:
-          return 'Access denied'
-        case 404:
-          return 'Resource not found'
-        case 500:
-          return 'Server error - please try again later'
-        default:
-          return `HTTP ${status}: ${error.response.statusText || 'Unknown error'}`
-      }
+    } catch {
+      // If we can't read the response body, fall back to status
     }
     
-    // Handle request errors (network, timeout, etc.)
-    if (error.request) {
-      if (error.code === 'ECONNREFUSED') {
-        return 'Cannot connect to server - please check if the backend is running'
-      }
-      if (error.code === 'NETWORK_ERROR') {
-        return 'Network error - please check your connection'
-      }
-      if (error.code === 'TIMEOUT') {
-        return 'Request timed out - please try again'
-      }
-      return 'Network error - unable to reach server'
+    // Default status-based messages
+    switch (response.status) {
+      case 400:
+        return 'Bad request - please check your input'
+      case 401:
+        return 'Authentication required - please login'
+      case 403:
+        return 'Access denied'
+      case 404:
+        return 'Resource not found'
+      case 500:
+        return 'Server error - please try again later'
+      default:
+        return `HTTP ${response.status}: ${response.statusText || 'Unknown error'}`
     }
-    
-    // Fallback for other errors
-    return error.message || 'An unexpected error occurred'
   }
   
   async get<T>(url: string, params?: Record<string, any>): Promise<T> {
-    const response = await this.client.get(url, { params })
-    return response.data
+    let fullUrl = url
+    if (params) {
+      const searchParams = new URLSearchParams()
+      Object.entries(params).forEach(([key, value]) => {
+        if (value != null) {
+          searchParams.append(key, String(value))
+        }
+      })
+      const queryString = searchParams.toString()
+      if (queryString) {
+        fullUrl += `?${queryString}`
+      }
+    }
+    return this.request<T>(fullUrl, { method: 'GET' })
   }
   
   async post<T>(url: string, data?: any): Promise<T> {
-    const response = await this.client.post(url, data)
-    return response.data
+    return this.request<T>(url, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined
+    })
   }
   
   async put<T>(url: string, data?: any): Promise<T> {
-    const response = await this.client.put(url, data)
-    return response.data
+    return this.request<T>(url, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined
+    })
   }
   
   async delete<T>(url: string): Promise<T> {
-    const response = await this.client.delete(url)
-    return response.data
+    return this.request<T>(url, { method: 'DELETE' })
   }
 }
 

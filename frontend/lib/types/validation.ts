@@ -40,3 +40,25 @@ export interface ValidationState {
 }
 
 export type ValidationStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned'
+
+export interface ValidationPreview {
+  can_complete: boolean
+  unvalidated_addresses: Array<{
+    id: number
+    provider_id: number
+    address1: string
+    address2?: string
+    city: string
+    state: string
+    zip: string
+    address_category?: string
+  }>
+  unvalidated_phones: Array<{
+    id: number
+    provider_id: number
+    phone?: string
+  }>
+  total_required: number
+  total_validated: number
+  message: string
+}

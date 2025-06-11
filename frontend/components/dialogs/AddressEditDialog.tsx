@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { AddressForm } from '@/components/forms/AddressForm'
-import type { ProviderAddress, AddressValidation } from '@/lib/types'
+import type { ProviderAddress, AddressValidation, NewAddress } from '@/lib/types'
 
 interface AddressEditDialogProps {
   isOpen: boolean
@@ -25,8 +25,9 @@ export function AddressEditDialog({
   validation,
   onSubmit
 }: AddressEditDialogProps) {
-  const handleSubmit = (data: Partial<AddressValidation>) => {
-    onSubmit(data)
+  const handleSubmit = (data: Partial<AddressValidation> | NewAddress) => {
+    // For address editing, we only expect AddressValidation, not NewAddress
+    onSubmit(data as Partial<AddressValidation>)
     onClose()
   }
   

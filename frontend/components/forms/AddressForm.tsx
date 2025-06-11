@@ -5,13 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { ProviderAddress, AddressValidation } from '@/lib/types'
+import type { ProviderAddress, AddressValidation, NewAddress } from '@/lib/types'
 import { validateAddress, sanitizeInput } from '@/lib/utils'
 
 interface AddressFormProps {
   address?: ProviderAddress
   validation?: AddressValidation
-  onSubmit: (data: Partial<AddressValidation>) => void
+  onSubmit: (data: Partial<AddressValidation> | NewAddress) => void
   onCancel: () => void
   isNew?: boolean
 }
@@ -64,12 +64,12 @@ export function AddressForm({
     if (isNew) {
       onSubmit({
         address_category: formData.address_category,
-        corrected_address1: formData.address1,
-        corrected_address2: formData.address2,
-        corrected_city: formData.city,
-        corrected_state: formData.state.toUpperCase(),
-        corrected_zip: formData.zip
-      })
+        address1: formData.address1,
+        address2: formData.address2,
+        city: formData.city,
+        state: formData.state.toUpperCase(),
+        zip: formData.zip
+      } as NewAddress)
     } else {
       onSubmit({
         address_id: address?.id,

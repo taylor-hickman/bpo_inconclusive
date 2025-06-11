@@ -34,7 +34,7 @@ export const formatAddress = (address: {
   return parts.join(', ')
 }
 
-export const formatDateTime = (timestamp: string | null): string => {
+export const formatDateTime = (timestamp: string | null): { date: string; time: string; dayOfWeek: string } | string => {
   if (!timestamp) return 'N/A'
   
   const date = new Date(timestamp)

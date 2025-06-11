@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	if err := database.InitDB("./auth.db"); err != nil {
+	if err := database.InitDB("../../auth.db"); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
 

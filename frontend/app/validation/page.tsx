@@ -4,11 +4,10 @@ import { useState, useEffect } from 'react'
 import { AuthGuard } from '@/components/layout/auth-guard'
 import { SidebarLayout } from '@/components/layout/sidebar-layout'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
-import { PageLoading } from '@/components/common/LoadingSpinner'
-import { ErrorDisplay } from '@/components/common/ErrorDisplay'
 
 // Validation components
 import { ValidationHeader } from '@/components/validation/ValidationHeader'
+import { ValidationSteps } from '@/components/validation/ValidationSteps'
 import { ProviderCard } from '@/components/validation/ProviderCard'
 import { AddressValidationCard } from '@/components/validation/AddressValidationCard'
 import { PhoneValidationCard } from '@/components/validation/PhoneValidationCard'
@@ -20,12 +19,12 @@ import { PhoneEditDialog } from '@/components/dialogs/PhoneEditDialog'
 import { AddNewAddressDialog } from '@/components/dialogs/AddNewAddressDialog'
 
 // Hooks and stores
-import { useProviderData, useValidation } from '@/lib/hooks'
+import { useProviderData, useValidation, useAutoSave } from '@/lib/hooks'
 import { useProviderStore } from '@/lib/stores'
 
 // Utilities
 import { groupRecordsByAddress } from '@/lib/utils'
-import type { AddressValidation, PhoneValidation, NewAddress } from '@/lib/types'
+import type { AddressValidation, PhoneValidation, ValidationPreview } from '@/lib/types'
 
 // Dialog state management
 interface DialogState {
@@ -35,7 +34,11 @@ interface DialogState {
 }
 
 export default function ValidationPage() {
-  const { currentProvider, fetchNextProvider, clearProvider } = useProviderStore()
+  const { 
+    currentData: currentProvider, 
+    fetchNextProvider, 
+    clearValidations 
+  } = useProviderStore()
   
   const {
     validationState,
@@ -44,15 +47,13 @@ export default function ValidationPage() {
     addNewAddress,
     saveProgress,
     recordCallAttempt,
+    getValidationPreview,
     completeValidation,
-    isValidationComplete,
-    validationProgress,
     isLoading: validationLoading,
     error: validationError
   } = useValidation({ providerData: currentProvider })
   
   const {
-    stats,
     fetchStats,
     isLoading: providerLoading,
     error: providerError
@@ -62,6 +63,16 @@ export default function ValidationPage() {
     addressEdit: { isOpen: false },
     phoneEdit: { isOpen: false },
     addAddress: { isOpen: false }
+  })
+
+  const [validationPreview, setValidationPreview] = useState<ValidationPreview | null>(null)
+
+  // Auto-save validation state changes
+  const { saveNow: autoSaveNow } = useAutoSave({
+    data: validationState,
+    onSave: saveProgress,
+    delay: 3000, // Save after 3 seconds of inactivity
+    enabled: !!currentProvider // Only auto-save when there's a provider
   })
   
   // Fetch stats on mount
@@ -97,7 +108,7 @@ export default function ValidationPage() {
     try {
       await completeValidation()
       await fetchStats()
-      clearProvider()
+      clearValidations()
     } catch (error) {
       console.error('Failed to complete validation:', error)
     }
@@ -141,12 +152,6 @@ export default function ValidationPage() {
     }))
   }
   
-  const openAddAddress = () => {
-    setDialogs(prev => ({
-      ...prev,
-      addAddress: { isOpen: true }
-    }))
-  }
   
   const closeAddAddress = () => {
     setDialogs(prev => ({
@@ -163,6 +168,20 @@ export default function ValidationPage() {
   const currentEditPhone = dialogs.phoneEdit.phoneId 
     ? groupedRecords.flat().find(r => r.phone.id === dialogs.phoneEdit.phoneId)?.phone
     : undefined
+
+  // Wrapper functions for dialog callbacks
+  const handleAddressEditSubmit = (data: Partial<AddressValidation>) => {
+    if (!currentEditAddress || !data.address_id) return
+    setAddressValidation({
+      address_id: currentEditAddress.id,
+      is_correct: data.is_correct ?? false,
+      ...data
+    } as AddressValidation)
+  }
+
+  const handlePhoneEditSubmit = (data: PhoneValidation) => {
+    setPhoneValidation(data)
+  }
   
   const isLoading = providerLoading || validationLoading
   const error = providerError || validationError
@@ -175,12 +194,12 @@ export default function ValidationPage() {
             <ValidationHeader
               isLoading={isLoading}
               error={error}
-              progress={validationProgress}
               onGrabNext={handleGrabNext}
               onSaveProgress={handleSaveProgress}
               onComplete={handleComplete}
-              canComplete={isValidationComplete}
               hasProvider={!!currentProvider}
+              getValidationPreview={getValidationPreview}
+              onPreviewUpdate={setValidationPreview}
             />
             
             {currentProvider && (
@@ -227,6 +246,12 @@ export default function ValidationPage() {
                 
                 {/* Sidebar */}
                 <div className="space-y-6">
+                  {/* Validation Steps */}
+                  <ValidationSteps
+                    session={currentProvider.validation_session || null}
+                    preview={validationPreview}
+                  />
+
                   {/* Call attempts */}
                   <CallAttemptsSection
                     session={currentProvider.validation_session || null}
@@ -275,7 +300,7 @@ export default function ValidationPage() {
               onClose={closeAddressEdit}
               address={currentEditAddress}
               validation={validationState.addressValidations[currentEditAddress.id]}
-              onSubmit={setAddressValidation}
+              onSubmit={handleAddressEditSubmit}
             />
           )}
           
@@ -285,7 +310,7 @@ export default function ValidationPage() {
               onClose={closePhoneEdit}
               phone={currentEditPhone}
               validation={validationState.phoneValidations[currentEditPhone.id]}
-              onSubmit={setPhoneValidation}
+              onSubmit={handlePhoneEditSubmit}
             />
           )}
           

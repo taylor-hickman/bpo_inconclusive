@@ -267,6 +267,9 @@ func UpdateValidation(sessionID int, userID int, update models.ValidationUpdate)
 		SELECT user_id FROM validation_sessions WHERE id = ? AND status = 'in_progress'
 	`, sessionID).Scan(&sessionUserID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return errors.New("session not found or already completed")
+		}
 		return err
 	}
 	if sessionUserID != userID {
@@ -428,6 +431,7 @@ func CompleteValidation(sessionID int, userID int) error {
 	}
 
 	// Check if all addresses and phones have been validated
+	// Note: We only check actual phone records (id > 0), not null phones (id = 0)
 	var unvalidatedCount int
 	err = tx.QueryRow(`
 		SELECT COUNT(*) FROM (
@@ -435,7 +439,7 @@ func CompleteValidation(sessionID int, userID int) error {
 			WHERE provider_id = ? AND is_correct IS NULL
 			UNION ALL
 			SELECT id FROM provider_phones 
-			WHERE provider_id = ? AND is_correct IS NULL
+			WHERE provider_id = ? AND is_correct IS NULL AND id > 0
 		)
 	`, providerID, providerID).Scan(&unvalidatedCount)
 	if err != nil {
@@ -457,6 +461,126 @@ func CompleteValidation(sessionID int, userID int) error {
 	}
 
 	return tx.Commit()
+}
+
+type ValidationPreview struct {
+	CanComplete          bool                    `json:"can_complete"`
+	UnvalidatedAddresses []models.ProviderAddress `json:"unvalidated_addresses"`
+	UnvalidatedPhones    []models.ProviderPhone   `json:"unvalidated_phones"`
+	TotalRequired        int                     `json:"total_required"`
+	TotalValidated       int                     `json:"total_validated"`
+	Message              string                  `json:"message"`
+}
+
+func GetValidationPreview(sessionID int, userID int) (*ValidationPreview, error) {
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// Verify session ownership
+	var sessionUserID, providerID int
+	err = tx.QueryRow(`
+		SELECT user_id, provider_id FROM validation_sessions 
+		WHERE id = ? AND status = 'in_progress'
+	`, sessionID).Scan(&sessionUserID, &providerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("session not found or already completed")
+		}
+		return nil, err
+	}
+	if sessionUserID != userID {
+		return nil, ErrSessionLocked
+	}
+
+	preview := &ValidationPreview{
+		UnvalidatedAddresses: []models.ProviderAddress{},
+		UnvalidatedPhones:    []models.ProviderPhone{},
+	}
+
+	// Get unvalidated addresses
+	addressRows, err := tx.Query(`
+		SELECT id, provider_id, address1, address2, city, state, zip, address_category
+		FROM provider_addresses 
+		WHERE provider_id = ? AND is_correct IS NULL
+	`, providerID)
+	if err != nil {
+		return nil, err
+	}
+	defer addressRows.Close()
+
+	for addressRows.Next() {
+		var addr models.ProviderAddress
+		err = addressRows.Scan(
+			&addr.ID, &addr.ProviderID, &addr.Address1, &addr.Address2, 
+			&addr.City, &addr.State, &addr.Zip, &addr.AddressCategory,
+		)
+		if err != nil {
+			return nil, err
+		}
+		preview.UnvalidatedAddresses = append(preview.UnvalidatedAddresses, addr)
+	}
+
+	// Get unvalidated phones (only real phones, not null phones with id = 0)
+	phoneRows, err := tx.Query(`
+		SELECT id, provider_id, phone
+		FROM provider_phones 
+		WHERE provider_id = ? AND is_correct IS NULL AND id > 0
+	`, providerID)
+	if err != nil {
+		return nil, err
+	}
+	defer phoneRows.Close()
+
+	for phoneRows.Next() {
+		var phone models.ProviderPhone
+		err = phoneRows.Scan(&phone.ID, &phone.ProviderID, &phone.Phone)
+		if err != nil {
+			return nil, err
+		}
+		preview.UnvalidatedPhones = append(preview.UnvalidatedPhones, phone)
+	}
+
+	// Get total counts
+	var totalAddresses, totalPhones, validatedAddresses, validatedPhones int
+	
+	err = tx.QueryRow(`SELECT COUNT(*) FROM provider_addresses WHERE provider_id = ?`, providerID).Scan(&totalAddresses)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Count only real phones (not null phones with id = 0)
+	err = tx.QueryRow(`SELECT COUNT(*) FROM provider_phones WHERE provider_id = ? AND id > 0`, providerID).Scan(&totalPhones)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = tx.QueryRow(`SELECT COUNT(*) FROM provider_addresses WHERE provider_id = ? AND is_correct IS NOT NULL`, providerID).Scan(&validatedAddresses)
+	if err != nil {
+		return nil, err
+	}
+	
+	err = tx.QueryRow(`SELECT COUNT(*) FROM provider_phones WHERE provider_id = ? AND is_correct IS NOT NULL AND id > 0`, providerID).Scan(&validatedPhones)
+	if err != nil {
+		return nil, err
+	}
+
+	preview.TotalRequired = totalAddresses + totalPhones
+	preview.TotalValidated = validatedAddresses + validatedPhones
+	preview.CanComplete = len(preview.UnvalidatedAddresses) == 0 && len(preview.UnvalidatedPhones) == 0
+
+	// Generate helpful message
+	if preview.CanComplete {
+		preview.Message = "All validations complete. You can now complete the validation."
+	} else {
+		unvalidatedCount := len(preview.UnvalidatedAddresses) + len(preview.UnvalidatedPhones)
+		preview.Message = fmt.Sprintf("Please validate %d remaining items (%d addresses, %d phones) before completing.", 
+			unvalidatedCount, len(preview.UnvalidatedAddresses), len(preview.UnvalidatedPhones))
+	}
+
+	return preview, tx.Commit()
 }
 
 func isNextBusinessDay(t1, t2 time.Time) bool {

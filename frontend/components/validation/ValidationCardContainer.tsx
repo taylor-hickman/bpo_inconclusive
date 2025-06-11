@@ -27,7 +27,7 @@ export function ValidationCardContainer({ children, className }: ValidationCardC
   }
 
   const handleMarkCorrect = () => {
-    const currentChild = validChildren[focusedIndex]
+    const currentChild = validChildren[focusedIndex] as any
     if (currentChild?.props?.onValidationChange) {
       // For address validation cards, we need to pass the proper validation object
       if (currentChild.props.address) {
@@ -49,7 +49,7 @@ export function ValidationCardContainer({ children, className }: ValidationCardC
   }
 
   const handleMarkIncorrect = () => {
-    const currentChild = validChildren[focusedIndex]
+    const currentChild = validChildren[focusedIndex] as any
     if (currentChild?.props?.onValidationChange) {
       // For address validation cards
       if (currentChild.props.address) {
@@ -71,7 +71,7 @@ export function ValidationCardContainer({ children, className }: ValidationCardC
   }
 
   const handleEdit = () => {
-    const currentChild = validChildren[focusedIndex]
+    const currentChild = validChildren[focusedIndex] as any
     if (currentChild?.props?.onEdit) {
       currentChild.props.onEdit()
     }
@@ -118,15 +118,15 @@ export function ValidationCardContainer({ children, className }: ValidationCardC
       {validChildren.map((child, index) => (
         <div
           key={index}
-          ref={el => cardRefs.current[index] = el}
+          ref={el => { cardRefs.current[index] = el }}
           className={cn(
             "transition-all duration-200",
             focusedIndex === index && "ring-2 ring-blue-500 ring-offset-2 rounded-lg"
           )}
           tabIndex={-1}
         >
-          {cloneElement(child, {
-            ...child.props,
+          {cloneElement(child as any, {
+            ...(child.props || {}),
             'aria-current': focusedIndex === index ? 'true' : 'false',
             'data-focused': focusedIndex === index
           })}
