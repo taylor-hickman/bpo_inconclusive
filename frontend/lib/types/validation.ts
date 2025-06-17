@@ -23,10 +23,15 @@ export interface NewAddress {
   zip: string
 }
 
+export interface NewPhone {
+  phone: string
+}
+
 export interface ValidationUpdate {
   address_validations: AddressValidation[]
   phone_validations: PhoneValidation[]
   new_addresses: NewAddress[]
+  new_phones?: NewPhone[]
 }
 
 export interface CallAttemptRequest {
@@ -37,6 +42,7 @@ export interface ValidationState {
   addressValidations: Record<number, AddressValidation>
   phoneValidations: Record<number, PhoneValidation>
   newAddresses: NewAddress[]
+  newPhones: NewPhone[]
 }
 
 export type ValidationStatus = 'pending' | 'in_progress' | 'completed' | 'abandoned'

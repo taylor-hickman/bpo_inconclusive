@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AuthGuard } from '@/components/layout/auth-guard'
 import { SidebarLayout } from '@/components/layout/sidebar-layout'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
@@ -17,6 +17,7 @@ import { CallAttemptsSection } from '@/components/validation/CallAttemptsSection
 import { AddressEditDialog } from '@/components/dialogs/AddressEditDialog'
 import { PhoneEditDialog } from '@/components/dialogs/PhoneEditDialog'
 import { AddNewAddressDialog } from '@/components/dialogs/AddNewAddressDialog'
+import { AddNewPhoneDialog } from '@/components/dialogs/AddNewPhoneDialog'
 
 // Hooks and stores
 import { useProviderData, useValidation, useAutoSave } from '@/lib/hooks'
@@ -31,6 +32,7 @@ interface DialogState {
   addressEdit: { isOpen: boolean; addressId?: number }
   phoneEdit: { isOpen: boolean; phoneId?: number }
   addAddress: { isOpen: boolean }
+  addPhone: { isOpen: boolean }
 }
 
 export default function ValidationPage() {
@@ -46,6 +48,7 @@ export default function ValidationPage() {
     setAddressValidation,
     setPhoneValidation,
     addNewAddress,
+    addNewPhone,
     saveProgress,
     recordCallAttempt,
     getValidationPreview,
@@ -63,10 +66,25 @@ export default function ValidationPage() {
   const [dialogs, setDialogs] = useState<DialogState>({
     addressEdit: { isOpen: false },
     phoneEdit: { isOpen: false },
-    addAddress: { isOpen: false }
+    addAddress: { isOpen: false },
+    addPhone: { isOpen: false }
   })
 
   const [validationPreview, setValidationPreview] = useState<ValidationPreview | null>(null)
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
+  
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(event.target as Node)) {
+        setShowAddMenu(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   // Auto-save validation state changes
   const { saveNow: autoSaveNow } = useAutoSave({
@@ -171,12 +189,42 @@ export default function ValidationPage() {
     }))
   }
   
+  const openAddAddress = () => {
+    setDialogs(prev => ({
+      ...prev,
+      addAddress: { isOpen: true }
+    }))
+  }
   
   const closeAddAddress = () => {
     setDialogs(prev => ({
       ...prev,
       addAddress: { isOpen: false }
     }))
+  }
+  
+  const openAddPhone = () => {
+    setDialogs(prev => ({
+      ...prev,
+      addPhone: { isOpen: true }
+    }))
+    setShowAddMenu(false)
+  }
+  
+  const closeAddPhone = () => {
+    setDialogs(prev => ({
+      ...prev,
+      addPhone: { isOpen: false }
+    }))
+  }
+  
+  const handleAddLocation = (type: 'address' | 'phone') => {
+    if (type === 'address') {
+      openAddAddress()
+    } else {
+      openAddPhone()
+    }
+    setShowAddMenu(false)
   }
   
   // Get current edit items
@@ -230,7 +278,43 @@ export default function ValidationPage() {
                   
                   {/* Validation sections */}
                   <div className="space-y-4" data-section="validation">
-                    <h3 className="text-lg font-semibold">Address & Phone Validation</h3>
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-lg font-semibold">Address & Phone Validation</h3>
+                      <div className="relative" ref={addMenuRef}>
+                        <button
+                          onClick={() => setShowAddMenu(!showAddMenu)}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
+                        >
+                          Add Location
+                          <svg
+                            className={`w-4 h-4 transition-transform ${showAddMenu ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        
+                        {showAddMenu && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
+                            <button
+                              onClick={() => handleAddLocation('address')}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-md"
+                            >
+                              Add New Address
+                            </button>
+                            <button
+                              onClick={() => handleAddLocation('phone')}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-b-md"
+                            >
+                              Add New Phone
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     
                     {groupedRecords.map((group, groupIndex) => (
                       <div key={groupIndex} className="space-y-3">
@@ -303,6 +387,20 @@ export default function ValidationPage() {
                       ))}
                     </div>
                   )}
+                  
+                  {/* New phones */}
+                  {validationState.newPhones.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-medium">New Phones Added</h4>
+                      {validationState.newPhones.map((phone, index) => (
+                        <div key={index} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-sm text-blue-800">
+                            {phone.phone}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -342,6 +440,12 @@ export default function ValidationPage() {
             isOpen={dialogs.addAddress.isOpen}
             onClose={closeAddAddress}
             onSubmit={addNewAddress}
+          />
+          
+          <AddNewPhoneDialog
+            isOpen={dialogs.addPhone.isOpen}
+            onClose={closeAddPhone}
+            onSubmit={addNewPhone}
           />
         </ErrorBoundary>
       </SidebarLayout>
