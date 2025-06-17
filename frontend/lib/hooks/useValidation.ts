@@ -5,6 +5,7 @@ import type {
   AddressValidation, 
   PhoneValidation, 
   NewAddress,
+  NewPhone,
   ValidationState,
   ProviderValidationData,
   ValidationPreview,
@@ -19,7 +20,8 @@ export function useValidation({ providerData }: UseValidationProps) {
   const [validationState, setValidationState] = useState<ValidationState>({
     addressValidations: {},
     phoneValidations: {},
-    newAddresses: []
+    newAddresses: [],
+    newPhones: []
   })
   
   const updateValidationApi = useApi(validationService.updateValidation)
@@ -61,11 +63,26 @@ export function useValidation({ providerData }: UseValidationProps) {
     }))
   }, [])
   
+  const addNewPhone = useCallback((phone: NewPhone) => {
+    setValidationState(prev => ({
+      ...prev,
+      newPhones: [...prev.newPhones, phone]
+    }))
+  }, [])
+  
+  const removeNewPhone = useCallback((index: number) => {
+    setValidationState(prev => ({
+      ...prev,
+      newPhones: prev.newPhones.filter((_, i) => i !== index)
+    }))
+  }, [])
+  
   const clearValidations = useCallback(() => {
     setValidationState({
       addressValidations: {},
       phoneValidations: {},
-      newAddresses: []
+      newAddresses: [],
+      newPhones: []
     })
   }, [])
   
@@ -78,7 +95,8 @@ export function useValidation({ providerData }: UseValidationProps) {
     const updateData = {
       address_validations: Object.values(validationState.addressValidations),
       phone_validations: Object.values(validationState.phoneValidations),
-      new_addresses: validationState.newAddresses
+      new_addresses: validationState.newAddresses,
+      new_phones: validationState.newPhones
     }
     
     try {
@@ -160,6 +178,8 @@ export function useValidation({ providerData }: UseValidationProps) {
     setPhoneValidation,
     addNewAddress,
     removeNewAddress,
+    addNewPhone,
+    removeNewPhone,
     clearValidations,
     saveProgress,
     recordCallAttempt,
