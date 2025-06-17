@@ -1,64 +1,42 @@
 #!/bin/sh
 
 # BPO Provider Validation - Startup Script
-# This script initializes the database and loads sample data if needed
+# This script initializes PostgreSQL database and loads sample data if needed
 
 set -e
 
 echo "Starting BPO Provider Validation backend..."
 
-# Set default values
-DB_PATH="${DB_PATH:-/data/auth.db}"
-CSV_PATH="${CSV_PATH:-/app/data/bpo_inconclusive_provider_data_sample.csv}"
+# Set default values for PostgreSQL
+DATABASE_URL="${DATABASE_URL:-postgres://bpo_user:bpo_secure_password_2024@postgres:5432/bpo_validation?sslmode=disable}"
+CSV_PATH="${CSV_PATH:-/root/data/bpo_inconclusive_provider_data_sample.csv}"
 SKIP_DATA_LOAD="${SKIP_DATA_LOAD:-false}"
 
-echo "Database path: $DB_PATH"
+echo "Database URL: $DATABASE_URL"
 echo "CSV data path: $CSV_PATH"
 
-# Create data directory if it doesn't exist
-mkdir -p "$(dirname "$DB_PATH")"
+# Wait for PostgreSQL to be ready
+echo "Waiting for PostgreSQL to be ready..."
+until pg_isready -h postgres -p 5432 -U bpo_user > /dev/null 2>&1; do
+    echo "PostgreSQL is not ready yet, waiting..."
+    sleep 2
+done
+echo "PostgreSQL is ready!"
 
-# Check if database exists and has data
-if [ -f "$DB_PATH" ]; then
-    echo "Database exists, checking for provider data..."
-    
-    # Check if providers table exists and has data
-    PROVIDER_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM providers;" 2>/dev/null || echo "0")
-    echo "Found $PROVIDER_COUNT providers in database"
-    
-    if [ "$PROVIDER_COUNT" -eq "0" ] && [ "$SKIP_DATA_LOAD" = "false" ]; then
-        echo "No provider data found, loading from CSV..."
-        if [ -f "$CSV_PATH" ]; then
-            echo "Loading data from $CSV_PATH..."
-            /app/loader "$CSV_PATH"
-            echo "Data loading completed successfully"
-        else
-            echo "Warning: CSV file not found at $CSV_PATH"
-            echo "Skipping data load..."
-        fi
-    else
-        echo "Provider data already exists or data loading is disabled"
-    fi
+# Migrations will be run automatically by the main application
+
+# Check if data loading should be skipped
+if [ "$SKIP_DATA_LOAD" = "true" ]; then
+    echo "Skipping data load as SKIP_DATA_LOAD is set to true"
 else
-    echo "Database does not exist, it will be created by the application"
-    
-    # Start the main application and let it create the database
-    echo "Starting main application to initialize database..."
-    timeout 10 ./main &
-    MAIN_PID=$!
-    
-    # Wait a moment for database to be created
-    sleep 3
-    
-    # Stop the main app
-    kill $MAIN_PID 2>/dev/null || true
-    wait $MAIN_PID 2>/dev/null || true
-    
-    # Now load data if CSV exists and skip is not set
-    if [ -f "$CSV_PATH" ] && [ "$SKIP_DATA_LOAD" = "false" ]; then
+    # Load CSV data using the loader
+    if [ -f "$CSV_PATH" ]; then
         echo "Loading initial data from $CSV_PATH..."
         ./loader "$CSV_PATH"
-        echo "Initial data loading completed"
+        echo "Data loading completed"
+    else
+        echo "Warning: CSV file not found at $CSV_PATH"
+        echo "Skipping data load..."
     fi
 fi
 

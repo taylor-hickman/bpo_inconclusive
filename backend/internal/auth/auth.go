@@ -1,12 +1,14 @@
 package auth
 
 import (
-	"database/sql"
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/user/auth-app/internal/database"
 	"github.com/user/auth-app/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -20,37 +22,45 @@ func RegisterUser(email, password string) (*models.User, error) {
 		return nil, err
 	}
 
-	query := `INSERT INTO users (email, password) VALUES (?, ?)`
-	result, err := database.DB.Exec(query, email, string(hashedPassword))
+	ctx := context.Background()
+	var user models.User
+	
+	query := `
+		INSERT INTO users (uuid, email, password, is_active) 
+		VALUES ($1, $2, $3, true) 
+		RETURNING id, uuid, email, is_active, created_at, updated_at
+	`
+	
+	err = database.QueryRow(ctx, query, uuid.New(), email, string(hashedPassword)).Scan(
+		&user.ID, &user.UUID, &user.Email, &user.IsActive, &user.CreatedAt, &user.UpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-
-	user := &models.User{
-		ID:        int(id),
-		Email:     email,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	return user, nil
+	return &user, nil
 }
 
 func LoginUser(email, password string) (*models.User, string, error) {
+	ctx := context.Background()
 	var user models.User
-	query := `SELECT id, email, password, created_at, updated_at FROM users WHERE email = ?`
 	
-	err := database.DB.QueryRow(query, email).Scan(
-		&user.ID, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt,
+	query := `
+		SELECT id, uuid, email, password, first_name, last_name, is_active,
+		       last_login_at, metadata, created_at, updated_at, created_by, updated_by
+		FROM users 
+		WHERE email = $1 AND is_active = true
+	`
+	
+	err := database.QueryRow(ctx, query, email).Scan(
+		&user.ID, &user.UUID, &user.Email, &user.Password,
+		&user.FirstName, &user.LastName, &user.IsActive,
+		&user.LastLoginAt, &user.Metadata, &user.CreatedAt, &user.UpdatedAt,
+		&user.CreatedBy, &user.UpdatedBy,
 	)
 	
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == pgx.ErrNoRows {
 			return nil, "", errors.New("invalid credentials")
 		}
 		return nil, "", err
@@ -58,6 +68,16 @@ func LoginUser(email, password string) (*models.User, string, error) {
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return nil, "", errors.New("invalid credentials")
+	}
+
+	// Update last login time
+	_, err = database.DB.Exec(ctx, `
+		UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = $1
+	`, user.ID)
+	if err != nil {
+		// Log the error but don't fail the login
+		fmt.Printf("Failed to update last login time for user %d: %v\n", user.ID, err)
 	}
 
 	token, err := GenerateJWT(user.ID)
@@ -115,15 +135,24 @@ func ValidateJWT(tokenString string) (int, error) {
 }
 
 func GetUserByID(userID int) (*models.User, error) {
+	ctx := context.Background()
 	var user models.User
-	query := `SELECT id, email, created_at, updated_at FROM users WHERE id = ?`
 	
-	err := database.DB.QueryRow(query, userID).Scan(
-		&user.ID, &user.Email, &user.CreatedAt, &user.UpdatedAt,
+	query := `
+		SELECT id, uuid, email, first_name, last_name, is_active,
+		       last_login_at, metadata, created_at, updated_at, created_by, updated_by
+		FROM users 
+		WHERE id = $1 AND is_active = true
+	`
+	
+	err := database.QueryRow(ctx, query, userID).Scan(
+		&user.ID, &user.UUID, &user.Email, &user.FirstName, &user.LastName,
+		&user.IsActive, &user.LastLoginAt, &user.Metadata,
+		&user.CreatedAt, &user.UpdatedAt, &user.CreatedBy, &user.UpdatedBy,
 	)
 	
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if err == pgx.ErrNoRows {
 			return nil, errors.New("user not found")
 		}
 		return nil, err

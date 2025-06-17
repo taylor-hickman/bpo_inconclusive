@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -13,22 +14,50 @@ import (
 )
 
 func main() {
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "../../auth.db"
+	// Load database configuration
+	config := database.LoadConfig()
+	
+	// Initialize PostgreSQL connection pool
+	if err := database.InitDB(config); err != nil {
+		log.Fatal("Failed to initialize database:", err)
+	}
+	defer database.Close()
+
+	// Run migrations
+	migrationsPath := "/app/migrations/postgres"
+	if _, err := os.Stat(migrationsPath); os.IsNotExist(err) {
+		migrationsPath = "../../migrations/postgres"
 	}
 	
-	if err := database.InitDB(dbPath); err != nil {
-		log.Fatal("Failed to initialize database:", err)
+	if err := database.RunMigrations(config.DatabaseURL, migrationsPath); err != nil {
+		log.Printf("Warning: Failed to run migrations: %v", err)
 	}
 
 	r := mux.NewRouter()
 
-	// Health check endpoint
+	// Health check endpoint with database connectivity
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if err := database.HealthCheck(ctx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Database unavailable: " + err.Error()))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	}).Methods("GET")
+
+	// Database stats endpoint (optional, for monitoring)
+	r.HandleFunc("/api/admin/db-stats", handlers.AuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		stats, err := database.GetDatabaseStats(ctx)
+		if err != nil {
+			http.Error(w, "Failed to get database stats", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(stats)
+	})).Methods("GET")
 
 	// Auth routes
 	r.HandleFunc("/api/auth/register", handlers.Register).Methods("POST")

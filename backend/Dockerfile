@@ -4,7 +4,7 @@ FROM golang:1.23-alpine AS builder
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache gcc musl-dev sqlite-dev
+RUN apk add --no-cache gcc musl-dev
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -21,7 +21,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o loader ./cmd/load
 FROM alpine:latest
 
 # Install runtime dependencies
-RUN apk --no-cache add ca-certificates sqlite
+RUN apk --no-cache add ca-certificates postgresql-client
 
 WORKDIR /root/
 
@@ -42,8 +42,8 @@ RUN mkdir -p /data
 # Expose port
 EXPOSE 8080
 
-# Set environment variables
-ENV DB_PATH=/data/auth.db
+# Set environment variables for PostgreSQL
+ENV DATABASE_URL=postgres://bpo_user:bpo_secure_password_2024@postgres:5432/bpo_validation?sslmode=disable
 ENV PORT=8080
 ENV CSV_PATH=/root/data/bpo_inconclusive_provider_data_sample.csv
 
