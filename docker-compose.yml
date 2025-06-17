@@ -1,6 +1,39 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bpo-validation-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=bpo_validation
+      - POSTGRES_USER=bpo_user
+      - POSTGRES_PASSWORD=bpo_secure_password_2024
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/postgres:/docker-entrypoint-initdb.d
+    networks:
+      - bpo-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bpo_user -d bpo_validation"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+
   backend:
     build:
       context: ./backend
@@ -13,13 +46,19 @@ services:
       - ./data:/data
       - ./backend/migrations:/app/migrations
     environment:
-      - DB_PATH=/data/auth.db
+      - DATABASE_URL=postgres://bpo_user:bpo_secure_password_2024@postgres:5432/bpo_validation?sslmode=disable
       - PORT=8080
       - CORS_ORIGINS=http://localhost:3000,http://frontend:3000
       - CSV_PATH=/root/data/bpo_inconclusive_provider_data_sample.csv
       - SKIP_DATA_LOAD=false
+      - DB_MAX_OPEN_CONNS=25
+      - DB_MAX_IDLE_CONNS=10
+      - DB_CONN_MAX_LIFETIME=5m
     networks:
       - bpo-network
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -71,6 +110,8 @@ services:
 
 volumes:
   data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:
